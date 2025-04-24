@@ -1,188 +1,71 @@
 import { create } from '@web3-storage/w3up-client';
 
-// Tạo client
-export async function createClient() {
-  try {
-    const client = await create();
-    
-    if (!process.env.WEB3_STORAGE_KEY) {
-      throw new Error('WEB3_STORAGE_KEY không được định nghĩa trong biến môi trường');
-    }
-    
-    // Lưu ý: Hiện tại w3up-client yêu cầu định dạng email@key
-    // Đảm bảo WEB3_STORAGE_KEY được định dạng đúng
-    await client.login(process.env.WEB3_STORAGE_KEY as `${string}@${string}`);
-    
-    return client;
-  } catch (error) {
-    console.error('Lỗi khi tạo Web3.Storage client:', error);
-    throw error;
+// Create Web3.Storage client
+const getClient = async () => {
+  if (!process.env.NEXT_PUBLIC_WEB3_STORAGE_KEY) {
+    throw new Error('Web3.Storage API key is required. Please add it to .env.local');
   }
-}
+  
+  const client = await create();
+  await client.login(process.env.NEXT_PUBLIC_WEB3_STORAGE_KEY);
+  return client;
+};
 
-// Upload file lên IPFS
-export async function uploadToIPFS(file: File) {
+/**
+ * Upload a file to IPFS using Web3.Storage
+ * @param file - The file to upload
+ * @returns The IPFS URL for the uploaded file
+ */
+export const uploadToIPFS = async (file: File): Promise<string> => {
   try {
-    const client = await createClient();
+    const client = await getClient();
+    const fileObject = new Blob([await file.arrayBuffer()]);
     
-    // Tạo space nếu chưa có
-    const space = await client.createSpace('nft-space');
-    await client.setCurrentSpace(space.did());
+    // Create a CAR file and upload
+    const upload = await client.uploadFile(fileObject);
     
-    // Upload file và lấy CID
-    const cid = await client.uploadFile(file);
-    
-    // Trả về URL IPFS
-    const ipfsUrl = `ipfs://${cid}`;
-    return ipfsUrl;
+    // Return the IPFS URL
+    return `ipfs://${upload.root.toString()}`;
   } catch (error) {
-    console.error('Lỗi khi upload file lên IPFS:', error);
-    throw error;
+    console.error('Error uploading file to IPFS:', error);
+    throw new Error('Failed to upload file to IPFS');
   }
-}
+};
 
-// Tạo metadata và upload lên IPFS
-export async function createAndUploadMetadata(name: string, description: string, imageUrl: string, attributes: any[] = []) {
+/**
+ * Create metadata JSON and upload to IPFS
+ * @param name - The name of the NFT
+ * @param description - The description of the NFT
+ * @param imageUrl - The IPFS URL of the NFT image
+ * @param attributes - The attributes of the NFT
+ * @returns The IPFS URL for the metadata JSON
+ */
+export const createAndUploadMetadata = async (
+  name: string,
+  description: string,
+  imageUrl: string,
+  attributes: Array<{ trait_type: string; value: string }>
+): Promise<string> => {
   try {
+    // Create metadata object according to OpenSea metadata standards
     const metadata = {
       name,
       description,
       image: imageUrl,
-      attributes
+      attributes: attributes || []
     };
-    
-    // Tạo file từ metadata
-    const metadataFile = new File(
-      [JSON.stringify(metadata, null, 2)],
-      'metadata.json',
-      { type: 'application/json' }
-    );
-    
-    // Upload metadata lên IPFS
-    const metadataUrl = await uploadToIPFS(metadataFile);
-    return metadataUrl;
-  } catch (error) {
-    console.error('Lỗi khi tạo và upload metadata:', error);
-    throw error;
-  }
-}
 
-// Lấy metadata từ IPFS
-export async function fetchMetadataFromIPFS(metadataUrl: string) {
-  try {
-    // Chuyển đổi từ ipfs:// thành gateway HTTP
-    const httpUrl = metadataUrl.replace('ipfs://', 'https://w3s.link/ipfs/');
+    // Convert to JSON
+    const metadataJSON = JSON.stringify(metadata);
     
-    const response = await fetch(httpUrl);
-    if (!response.ok) {
-      throw new Error(`Không thể tải metadata: ${response.statusText}`);
-    }
+    // Upload JSON to IPFS
+    const client = await getClient();
+    const metadataBlob = new Blob([metadataJSON], { type: 'application/json' });
+    const upload = await client.uploadFile(metadataBlob);
     
-    const metadata = await response.json();
-    return metadata;
+    return `ipfs://${upload.root.toString()}`;
   } catch (error) {
-    console.error('Lỗi khi lấy metadata từ IPFS:', error);
-    throw error;
+    console.error('Error creating and uploading metadata:', error);
+    throw new Error('Failed to create and upload metadata');
   }
-}
-
-// Lấy nội dung file từ IPFS
-export async function fetchContentFromIPFS(ipfsUrl: string) {
-  try {
-    // Chuyển đổi từ ipfs:// thành gateway HTTP
-    const httpUrl = ipfsUrl.replace('ipfs://', 'https://w3s.link/ipfs/');
-    
-    const response = await fetch(httpUrl);
-    if (!response.ok) {
-      throw new Error(`Không thể tải nội dung: ${response.statusText}`);
-    }
-    
-    return response;
-  } catch (error) {
-    console.error('Lỗi khi lấy nội dung từ IPFS:', error);
-    throw error;
-  }
-}
-
-// Kiểm tra trạng thái của file trên IPFS
-export async function checkFileStatus(cid: string) {
-  try {
-    const client = await createClient();
-    
-    // Tạo HTTP request để kiểm tra trạng thái qua gateway
-    const response = await fetch(`https://w3s.link/ipfs/${cid}`);
-    
-    return {
-      available: response.ok,
-      statusCode: response.status,
-      statusText: response.statusText
-    };
-  } catch (error) {
-    console.error('Lỗi khi kiểm tra trạng thái file:', error);
-    throw error;
-  }
-}
-
-// Upload nhiều file cùng lúc
-export async function uploadMultipleFilesToIPFS(files: File[]) {
-  try {
-    const client = await createClient();
-    
-    // Tạo space nếu chưa có
-    const space = await client.createSpace('nft-space');
-    await client.setCurrentSpace(space.did());
-    
-    // Upload từng file và thu thập các CID
-    const results = await Promise.all(
-      files.map(async (file) => {
-        const cid = await client.uploadFile(file);
-        return {
-          name: file.name,
-          cid,
-          url: `ipfs://${cid}`
-        };
-      })
-    );
-    
-    return results;
-  } catch (error) {
-    console.error('Lỗi khi upload nhiều file lên IPFS:', error);
-    throw error;
-  }
-}
-
-// Tạo và upload collection metadata (cho bộ sưu tập NFT)
-export async function createAndUploadCollectionMetadata(
-  name: string, 
-  description: string, 
-  image: string, 
-  externalLink?: string,
-  sellerFeeBasisPoints?: number,
-  feeRecipient?: string
-) {
-  try {
-    const metadata = {
-      name,
-      description,
-      image,
-      external_link: externalLink,
-      seller_fee_basis_points: sellerFeeBasisPoints || 0,
-      fee_recipient: feeRecipient,
-      timestamp: new Date().toISOString()
-    };
-    
-    // Tạo file từ metadata
-    const metadataFile = new File(
-      [JSON.stringify(metadata, null, 2)],
-      'collection-metadata.json',
-      { type: 'application/json' }
-    );
-    
-    // Upload metadata lên IPFS
-    const metadataUrl = await uploadToIPFS(metadataFile);
-    return metadataUrl;
-  } catch (error) {
-    console.error('Lỗi khi tạo và upload metadata collection:', error);
-    throw error;
-  }
-} 
+};

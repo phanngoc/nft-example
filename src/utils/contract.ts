@@ -1,65 +1,141 @@
 import { ethers } from 'ethers';
 
-// Khởi tạo provider
-export function getProvider() {
-  // Kiểm tra xem có window.ethereum không (trường hợp có MetaMask)
-  if (typeof window !== 'undefined' && (window as any).ethereum) {
-    return new ethers.BrowserProvider((window as any).ethereum);
-  }
+// ABI (Application Binary Interface) for the NFT contract
+// This defines the functions and events the frontend can interact with
+const NFT_ABI = [
+  // Read functions
+  "function name() view returns (string)",
+  "function symbol() view returns (string)",
+  "function tokenURI(uint256 tokenId) view returns (string)",
+  "function ownerOf(uint256 tokenId) view returns (address)",
   
-  // Nếu không có MetaMask, sử dụng RPC URL từ biến môi trường
-  const rpcUrl = process.env.NEXT_PUBLIC_ETHEREUM_RPC_URL || 'http://localhost:8545';
-  return new ethers.JsonRpcProvider(rpcUrl);
-}
+  // Write functions
+  "function mintNFT(address recipient, string memory tokenURI) public returns (uint256)",
+  
+  // Events
+  "event NFTMinted(address owner, uint256 tokenId, string tokenURI)"
+];
 
-// Lấy instance của contract
-export async function getContract(withSigner = false) {
-  const provider = getProvider();
+/**
+ * Get the NFT contract instance
+ * @returns The contract instance
+ */
+export const getContract = async () => {
+  if (typeof window === 'undefined') {
+    throw new Error('This function should only be called in the browser');
+  }
+
+  // Get contract address from environment variable
   const contractAddress = process.env.NEXT_PUBLIC_NFT_CONTRACT_ADDRESS;
-  
   if (!contractAddress) {
-    throw new Error('Địa chỉ hợp đồng không được định nghĩa trong biến môi trường');
+    throw new Error('NFT contract address is not configured. Please set NEXT_PUBLIC_NFT_CONTRACT_ADDRESS in .env.local');
   }
-  
-  // Động import ABI từ artifacts sau khi build smart contract
-  // Lưu ý: Bạn cần chạy "npx hardhat compile" trước khi sử dụng
-  const MyNFTArtifact = await import('../artifacts/contracts/MyNFT.sol/MyNFT.json')
-    .catch(() => {
-      throw new Error('Chưa compile smart contract, vui lòng chạy "npx hardhat compile"');
-    });
-  
-  // Lấy signer nếu cần
-  if (withSigner) {
-    const signer = await provider.getSigner();
-    return new ethers.Contract(contractAddress, MyNFTArtifact.abi, signer);
-  }
-  
-  // Trả về contract chỉ đọc nếu không cần signer
-  return new ethers.Contract(contractAddress, MyNFTArtifact.abi, provider);
-}
 
-// Mint NFT
-export async function mintNFT(address: string, tokenURI: string) {
   try {
-    const contract = await getContract(true);
+    // Check if MetaMask or similar provider is available
+    if (!window.ethereum) {
+      throw new Error('Web3 provider not found. Please install MetaMask or a compatible wallet.');
+    }
     
-    // Gọi hàm mintNFT trên smart contract
-    const tx = await contract.mintNFT(address, tokenURI);
+    // Create a Web3Provider using the browser's Ethereum provider
+    const provider = new ethers.BrowserProvider(window.ethereum);
     
-    // Đợi transaction được xác nhận
+    // Get signer (the user's account that will sign transactions)
+    const signer = await provider.getSigner();
+    
+    // Create contract instance
+    const nftContract = new ethers.Contract(contractAddress, NFT_ABI, signer);
+    
+    return nftContract;
+  } catch (error) {
+    console.error('Error connecting to contract:', error);
+    throw new Error('Failed to connect to the NFT contract');
+  }
+};
+
+/**
+ * Mint an NFT with the given metadata URI
+ * @param recipient Address who will own the NFT
+ * @param metadataURI URI to the NFT metadata stored on IPFS
+ * @returns Object containing the transaction receipt and token ID
+ */
+export const mintNFT = async (recipient: string, metadataURI: string) => {
+  try {
+    // Get contract instance
+    const nftContract = await getContract();
+    
+    console.log(`Minting NFT for ${recipient} with metadata: ${metadataURI}`);
+    
+    // Send transaction to mint NFT
+    const tx = await nftContract.mintNFT(recipient, metadataURI);
+    
+    // Wait for transaction confirmation
+    console.log('Waiting for transaction confirmation...');
     const receipt = await tx.wait();
     
-    // Tìm event NFTMinted trong receipt
-    const event = receipt.logs
-      .filter((log: any) => log.fragment && log.fragment.name === 'NFTMinted')
-      .map((log: any) => {
-        const { tokenId, owner, tokenURI } = log.args;
-        return { tokenId, owner, tokenURI };
-      })[0];
+    // Parse event logs to get the minted token ID
+    const nftMintedEvent = receipt.logs.find(
+      (log) => {
+        try {
+          const parsedLog = nftContract.interface.parseLog(log);
+          return parsedLog?.name === 'NFTMinted';
+        } catch (e) {
+          return false;
+        }
+      }
+    );
     
-    return event;
-  } catch (error) {
-    console.error('Lỗi khi mint NFT:', error);
-    throw error;
+    // Get token ID from event
+    const tokenId = nftMintedEvent
+      ? nftContract.interface.parseLog(nftMintedEvent)?.args[1]
+      : null;
+    
+    console.log(`NFT minted successfully! Token ID: ${tokenId}`);
+    
+    return {
+      receipt,
+      tokenId
+    };
+  } catch (error: any) {
+    console.error('Error minting NFT:', error);
+    
+    // Provide more specific error messages based on common issues
+    if (error.message?.includes('user rejected transaction')) {
+      throw new Error('Transaction was rejected by the user.');
+    } else if (error.message?.includes('insufficient funds')) {
+      throw new Error('Insufficient funds to complete the transaction.');
+    } else {
+      throw new Error(`Failed to mint NFT: ${error.message}`);
+    }
   }
-} 
+};
+
+/**
+ * Get the URI of an existing NFT
+ * @param tokenId The ID of the NFT
+ * @returns The metadata URI of the NFT
+ */
+export const getNFTMetadata = async (tokenId: number): Promise<string> => {
+  try {
+    const nftContract = await getContract();
+    return await nftContract.tokenURI(tokenId);
+  } catch (error) {
+    console.error('Error getting NFT metadata:', error);
+    throw new Error('Failed to get NFT metadata');
+  }
+};
+
+/**
+ * Get the owner of an existing NFT
+ * @param tokenId The ID of the NFT
+ * @returns The address of the owner
+ */
+export const getNFTOwner = async (tokenId: number): Promise<string> => {
+  try {
+    const nftContract = await getContract();
+    return await nftContract.ownerOf(tokenId);
+  } catch (error) {
+    console.error('Error getting NFT owner:', error);
+    throw new Error('Failed to get NFT owner');
+  }
+};
