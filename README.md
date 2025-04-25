@@ -1,12 +1,14 @@
 # NFT Minting Pipeline
 
-Dự án mẫu giúp upload ảnh lên IPFS, tạo metadata JSON và mint NFT sử dụng Web3.Storage thay vì Pinata.
+Dự án mẫu giúp upload ảnh lên IPFS, tạo metadata JSON và mint NFT sử dụng Web3.Storage.
 
 ## Tính năng
 
 - 🔁 Upload ảnh lên IPFS sử dụng Web3.Storage
 - 📦 Tự động tạo metadata JSON và lưu trữ trên IPFS
 - 🔗 Tương tác với smart contract để mint NFT
+- 🖼️ Gallery hiển thị NFT đã mint
+- 👛 Kết nối với MetaMask và các ví web3 khác
 
 ## Cài đặt
 
@@ -23,32 +25,29 @@ cd nft-minting-pipeline
 npm install
 ```
 
-3. Tạo file `.env.local` với nội dung sau:
+3. Tạo file `.env.local` từ template `.env.example`:
 
+```bash
+cp .env.example .env.local
 ```
-# Cấu hình Web3.Storage - Lấy key tại https://web3.storage
-NEXT_PUBLIC_WEB3_STORAGE_KEY=your_web3_storage_email@your_web3_storage_key
 
-# Cấu hình mạng Ethereum (ví dụ: Sepolia)
-ETHEREUM_RPC_URL=https://sepolia.infura.io/v3/your_infura_key_here
-PRIVATE_KEY=your_wallet_private_key_here
-
-# Địa chỉ hợp đồng NFT sau khi deploy
-NEXT_PUBLIC_NFT_CONTRACT_ADDRESS=your_deployed_contract_address
-```
+4. Cấu hình các biến môi trường trong file `.env.local`:
+   - Lấy API key Web3.Storage từ https://web3.storage
+   - Cài đặt RPC URL và private key cho mạng thử nghiệm (Sepolia)
+   - Thêm địa chỉ hợp đồng sau khi deploy
 
 ## Triển khai Smart Contract
 
 1. Biên dịch smart contract:
 
 ```bash
-npm run compile
+npx hardhat compile
 ```
 
 2. Triển khai trên mạng thử nghiệm:
 
 ```bash
-npm run deploy
+npx hardhat run scripts/deploy.ts --network sepolia
 ```
 
 3. Cập nhật `NEXT_PUBLIC_NFT_CONTRACT_ADDRESS` trong file `.env.local` với địa chỉ hợp đồng đã triển khai.
@@ -61,15 +60,42 @@ npm run dev
 
 Truy cập ứng dụng tại: http://localhost:3000
 
-## Sử dụng
+## Hướng dẫn sử dụng
 
-1. Kết nối ví MetaMask của bạn
-2. Upload ảnh lên IPFS
-3. Điền thông tin metadata (tên, mô tả)
-4. Mint NFT
+1. **Kết nối ví**: Nhấp vào nút "Kết nối ví MetaMask" để kết nối ví của bạn
+2. **Upload ảnh**: Chọn một hình ảnh để tải lên IPFS
+3. **Tạo metadata**: Điền thông tin tên và mô tả cho NFT của bạn
+4. **Mint NFT**: Nhấn nút để mint NFT của bạn vào blockchain
+5. **Xem NFT**: NFT đã mint sẽ hiển thị trong gallery phía dưới
+
+## Cấu trúc dự án
+
+```
+├── contracts/           # Smart contracts 
+│   └── MyNFT.sol        # NFT smart contract
+├── scripts/             # Scripts triển khai
+│   └── deploy.ts        # Script triển khai smart contract
+├── src/
+│   ├── artifacts/       # ABI và bytecode của contract
+│   ├── components/      # React components
+│   ├── pages/           # Next.js pages
+│   ├── styles/          # CSS styles
+│   └── utils/           # Các utility functions
+│       ├── contract.ts  # Tương tác với smart contract
+│       └── web3Storage.ts # Tương tác với IPFS qua Web3.Storage
+├── test/                # Test files
+└── hardhat.config.ts    # Cấu hình Hardhat
+```
 
 ## Lưu ý
 
 - Đảm bảo bạn có đủ ETH trong ví của mình để trả phí gas khi mint NFT
-- Đây chỉ là dự án mẫu, hãy đảm bảo thực hiện thêm kiểm tra bảo mật trong môi trường sản xuất
-- Web3.Storage là dịch vụ miễn phí nhưng có giới hạn lưu trữ, hãy kiểm tra chính sách hiện tại của họ
+- Dự án này sử dụng mạng thử nghiệm Sepolia, bạn cần lấy ETH từ faucet
+- Web3.Storage có giới hạn lưu trữ, hãy kiểm tra chính sách hiện tại của họ
+
+## Các công nghệ sử dụng
+
+- **Frontend**: Next.js, React, Tailwind CSS
+- **Blockchain**: Ethereum, Hardhat, Ethers.js
+- **Storage**: IPFS via Web3.Storage
+- **Smart Contract**: Solidity, OpenZeppelin
