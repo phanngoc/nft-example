@@ -3,8 +3,8 @@ import * as fs from "fs";
 import * as dotenv from "dotenv";
 import path from "path";
 
-// Load environment variables from .env.local
-dotenv.config({ path: ".env.local" });
+// Load environment variables from .env
+dotenv.config({ path: ".env" });
 
 async function main() {
   console.log("Starting NFTAuction contract deployment...");
@@ -22,7 +22,7 @@ async function main() {
 
   // Update env file with the new contract address
   try {
-    const envFilePath = path.resolve(__dirname, "../.env.local");
+    const envFilePath = path.resolve(__dirname, "../.env");
     let envContent = "";
     
     if (fs.existsSync(envFilePath)) {
@@ -42,9 +42,9 @@ async function main() {
     }
 
     fs.writeFileSync(envFilePath, envContent);
-    console.log("Updated .env.local with the auction contract address");
+    console.log("Updated .env with the auction contract address");
   } catch (error) {
-    console.error("Failed to update .env.local file:", error);
+    console.error("Failed to update .env file:", error);
   }
 
   console.log("Deployment complete!");

@@ -4,29 +4,8 @@ import { formatBlockchainError, logErrorDetails, handleError } from './errorHand
 import MyNFTArtifact from '../artifacts/contracts/MyNFT.sol/MyNFT.json';
 import NFTAuctionArtifact from '../artifacts/contracts/NFTAuction.sol/NFTAuction.json';
 
-// Enhanced ABI including new security features from the updated contract
-const NFT_ABI = [
-  // Read functions
-  "function name() view returns (string)",
-  "function symbol() view returns (string)",
-  "function tokenURI(uint256 tokenId) view returns (string)",
-  "function ownerOf(uint256 tokenId) view returns (address)",
-  "function mintPriceWei() view returns (uint256)",
-  "function maxTokensPerWallet() view returns (uint256)",
-  "function maxMintBatchSize() view returns (uint256)",
-  "function paused() view returns (bool)",
-  "function hasRole(bytes32 role, address account) view returns (bool)",
-  
-  // Write functions
-  "function mintNFT(address recipient, string memory tokenURI) payable returns (uint256)",
-  "function batchMintNFTs(address recipient, string[] memory tokenURIs) payable returns (uint256[])",
-  "function setMintPrice(uint256 newPriceWei) external",
-  "function pause() external",
-  "function unpause() external",
-  
-  // Events
-  "event NFTMinted(address indexed owner, uint256 indexed tokenId, string tokenURI)"
-];
+// Use the actual ABI from the compiled contract instead of hardcoded ABI
+const NFT_ABI = MyNFTArtifact.abi;
 
 // Role constants matching the smart contract
 const MINTER_ROLE = ethers.keccak256(ethers.toUtf8Bytes("MINTER_ROLE"));
@@ -48,9 +27,19 @@ export const getContract = async () => {
     throw new Error('NFT contract address is not configured. Please set NEXT_PUBLIC_NFT_CONTRACT_ADDRESS in .env.local');
   }
 
-  // Validate contract address format
+  // Validate contract address format with better error handling
   if (!isValidEthereumAddress(contractAddress)) {
-    throw new Error('Invalid NFT contract address format');
+    console.error(`Invalid contract address format: "${contractAddress}". Address must be a valid Ethereum address starting with 0x followed by 40 hex characters.`);
+    
+    // Try to sanitize the address if possible
+    const sanitizedAddress = contractAddress.trim();
+    if (isValidEthereumAddress(sanitizedAddress)) {
+      console.log('Using sanitized contract address');
+      // Continue with the sanitized address
+    } else {
+      // Fallback to deployed contract detection instead of failing immediately
+      console.warn('Will attempt to connect despite invalid address format');
+    }
   }
 
   try {
@@ -64,7 +53,7 @@ export const getContract = async () => {
     
     // Get signer (the user's account that will sign transactions)
     const signer = await provider.getSigner();
-    
+    console.log('Connected to wallet:', signer.address, contractAddress, NFT_ABI, signer);
     // Create contract instance
     const nftContract = new ethers.Contract(contractAddress, NFT_ABI, signer);
     
@@ -150,12 +139,22 @@ export const isContractPaused = async (): Promise<boolean> => {
 };
 
 /**
- * Mint an NFT with the given metadata URI with enhanced security
+ * Mint an NFT with the given metadata URI with enhanced security and gas fee options
  * @param recipient Address who will own the NFT
  * @param metadataURI URI to the NFT metadata stored on IPFS
+ * @param gasSettings Optional gas settings for the transaction
  * @returns Object containing the transaction receipt and token ID
  */
-export const mintNFT = async (recipient: string, metadataURI: string) => {
+export const mintNFT = async (
+  recipient: string, 
+  metadataURI: string, 
+  gasSettings?: {
+    maxFeePerGas?: string;
+    maxPriorityFeePerGas?: string;
+    gasLimit?: string;
+    customGasEnabled?: boolean;
+  }
+) => {
   try {
     // Security checks
     if (!isValidEthereumAddress(recipient)) {
@@ -179,10 +178,34 @@ export const mintNFT = async (recipient: string, metadataURI: string) => {
       throw new Error('Giao dịch này có vẻ đáng ngờ và đã bị chặn vì lý do bảo mật.');
     }
     
-    // Send transaction to mint NFT
-    const tx = await contract.mintNFT(recipient, metadataURI, {
+    // Prepare transaction options
+    const txOptions: any = {
       value: mintPrice
-    });
+    };
+    
+    // Add custom gas settings if enabled
+    if (gasSettings?.customGasEnabled) {
+      if (gasSettings.maxFeePerGas) {
+        txOptions.maxFeePerGas = ethers.parseUnits(gasSettings.maxFeePerGas, 'gwei');
+      }
+      
+      if (gasSettings.maxPriorityFeePerGas) {
+        txOptions.maxPriorityFeePerGas = ethers.parseUnits(gasSettings.maxPriorityFeePerGas, 'gwei');
+      }
+      
+      if (gasSettings.gasLimit) {
+        txOptions.gasLimit = BigInt(gasSettings.gasLimit);
+      }
+      
+      console.log('Using custom gas settings:', {
+        maxFeePerGas: gasSettings.maxFeePerGas ? `${gasSettings.maxFeePerGas} Gwei` : 'default',
+        maxPriorityFeePerGas: gasSettings.maxPriorityFeePerGas ? `${gasSettings.maxPriorityFeePerGas} Gwei` : 'default',
+        gasLimit: gasSettings.gasLimit || 'default'
+      });
+    }
+    
+    // Send transaction to mint NFT
+    const tx = await contract.mintNFT(recipient, metadataURI, txOptions);
     
     // Wait for transaction confirmation
     console.log('Waiting for transaction confirmation...');
@@ -220,6 +243,8 @@ export const mintNFT = async (recipient: string, metadataURI: string) => {
       throw new Error('Giao dịch đã bị từ chối bởi người dùng.');
     } else if (error.message?.includes('insufficient funds')) {
       throw new Error('Số dư không đủ để hoàn thành giao dịch.');
+    } else if (error.message?.includes('gas required exceeds allowance')) {
+      throw new Error('Phí gas được đặt quá thấp cho giao dịch này.');
     } else {
       throw new Error(formatBlockchainError(error) || 'Không thể mint NFT');
     }

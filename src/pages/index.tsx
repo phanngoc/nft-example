@@ -6,6 +6,7 @@ import { mintNFT, isContractPaused, getMintPrice } from '../utils/contract';
 import { validateImageFile, validateMetadata, sanitizeInput, isValidIPFSUrl, checkWalletSecurity } from '../utils/security';
 import WalletConnector from '../components/WalletConnector';
 import NFTGallery from '../components/NFTGallery';
+import GasFeeManager, { GasSettings } from '../components/GasFeeManager';
 
 export default function Home() {
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -33,6 +34,12 @@ export default function Home() {
     checked: false,
     isSafe: true,
   });
+  const [gasSettings, setGasSettings] = useState<GasSettings>({
+    maxFeePerGas: '0',
+    maxPriorityFeePerGas: '0',
+    gasLimit: '0',
+    customGasEnabled: false
+  });
   
   const nameRef = useRef<HTMLInputElement>(null);
   const descriptionRef = useRef<HTMLTextAreaElement>(null);
@@ -45,6 +52,11 @@ export default function Home() {
       performWalletSecurityCheck();
     }
   }, [walletAddress]);
+  
+  // Handle gas settings changes
+  const handleGasSettingsChange = (newSettings: GasSettings) => {
+    setGasSettings(newSettings);
+  };
   
   // Fetch contract status (paused state and mint price)
   const fetchContractStatus = async () => {
@@ -81,6 +93,20 @@ export default function Home() {
   // Xử lý kết nối ví
   const handleWalletConnect = (address: string) => {
     setWalletAddress(address);
+  };
+  
+  // Xử lý ngắt kết nối ví
+  const handleWalletDisconnect = () => {
+    setWalletAddress('');
+    // Reset relevant states when wallet is disconnected
+    setWalletSecurityStatus({
+      checked: false,
+      isSafe: true,
+    });
+    setContractStatus({
+      isPaused: false,
+      mintPrice: '0',
+    });
   };
   
   // Xử lý upload ảnh lên IPFS với kiểm tra bảo mật
@@ -202,8 +228,12 @@ export default function Home() {
       setResult((prev) => ({ ...prev, metadataCID: metadataUrl }));
       setStep(3);
       
-      // Mint NFT
-      const mintResult = await mintNFT(walletAddress, metadataUrl);
+      // Mint NFT with gas settings
+      const mintResult = await mintNFT(
+        walletAddress, 
+        metadataUrl,
+        gasSettings.customGasEnabled ? gasSettings : undefined
+      );
       
       setResult((prev) => ({ 
         ...prev, 
@@ -284,8 +314,8 @@ export default function Home() {
           </div>
         )}
         
-        {/* Wallet Connector Component */}
-        <WalletConnector onConnect={handleWalletConnect} />
+        {/* Wallet Connector Component - Updated with onDisconnect prop */}
+        <WalletConnector onConnect={handleWalletConnect} onDisconnect={handleWalletDisconnect} />
         
         <div className="border rounded-lg p-6 bg-white shadow-md">
           <div className="mb-6">
@@ -364,10 +394,19 @@ export default function Home() {
                   </p>
                 </div>
               )}
+              
+              {/* Gas Fee Manager Component */}
+              {result.imageCID && walletAddress && !contractStatus.isPaused && (
+                <GasFeeManager 
+                  onGasSettingsChange={handleGasSettingsChange}
+                  disabled={isLoading}
+                />
+              )}
+              
               <button
                 type="submit"
                 disabled={!result.imageCID || isLoading || !walletAddress || contractStatus.isPaused}
-                className={`bg-purple-500 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded ${(!result.imageCID || isLoading || !walletAddress || contractStatus.isPaused) ? 'opacity-50 cursor-not-allowed' : ''}`}
+                className={`mt-4 bg-purple-500 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded ${(!result.imageCID || isLoading || !walletAddress || contractStatus.isPaused) ? 'opacity-50 cursor-not-allowed' : ''}`}
               >
                 {isLoading && step > 1 ? 'Đang xử lý...' : 'Tạo Metadata và Mint NFT'}
               </button>

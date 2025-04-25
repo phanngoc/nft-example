@@ -50,7 +50,7 @@ npx hardhat compile
 npx hardhat run scripts/deploy.ts --network sepolia
 ```
 
-3. Cập nhật `NEXT_PUBLIC_NFT_CONTRACT_ADDRESS` trong file `.env.local` với địa chỉ hợp đồng đã triển khai.
+3. Cập nhật `NEXT_PUBLIC_NFT_CONTRACT_ADDRESS` trong file `.env` với địa chỉ hợp đồng đã triển khai.
 
 ## Khởi chạy ứng dụng
 

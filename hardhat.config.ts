@@ -8,9 +8,9 @@ const config: HardhatUserConfig = {
   solidity: "0.8.20",
   networks: {
     hardhat: {},
-    sepolia: {
+    mumbai: {
       url: process.env.ETHEREUM_RPC_URL || "",
-      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
+      // accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
     }
   },
   paths: {
