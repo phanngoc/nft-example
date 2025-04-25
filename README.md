@@ -2,6 +2,8 @@
 
 Dự án mẫu giúp upload ảnh lên IPFS, tạo metadata JSON và mint NFT sử dụng Web3.Storage.
 
+![NFT Minting](nft-mining-screenshot.png)
+
 ## Tính năng
 
 - 🔁 Upload ảnh lên IPFS sử dụng Web3.Storage
@@ -38,19 +40,40 @@ cp .env.example .env.local
 
 ## Triển khai Smart Contract
 
-1. Biên dịch smart contract:
+- Biên dịch smart contract:
 
 ```bash
 npx hardhat compile
 ```
 
-2. Triển khai trên mạng thử nghiệm:
+- Triển khai trên mạng thử nghiệm:
 
 ```bash
-npx hardhat run scripts/deploy.ts --network sepolia
+npx hardhat run scripts/deploy.js --network sepolia
 ```
 
-3. Cập nhật `NEXT_PUBLIC_NFT_CONTRACT_ADDRESS` trong file `.env` với địa chỉ hợp đồng đã triển khai.
+- Cập nhật `NEXT_PUBLIC_NFT_CONTRACT_ADDRESS` trong file `.env` với địa chỉ hợp đồng đã triển khai.
+
+
+- Tạo network local 
+
+```bash
+npx hardhat node
+Started HTTP and WebSocket JSON-RPC server at http://127.0.0.1:8545/
+
+Accounts
+```
+
+- Add custom network vào metamask.
+
+![MetaMask Setting](metamask-setting.png)
+
+Ensure that your MetaMask or other wallet is connected to the local Hardhat network:
+
+Network Name: Gotesting
+RPC URL: http://127.0.0.1:8545
+Chain ID: 31337
+Currency Symbol: ETH
 
 ## Khởi chạy ứng dụng
 
