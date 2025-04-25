@@ -1,6 +1,8 @@
 import { ethers } from 'ethers';
 import { isValidEthereumAddress, isSuspiciousTransaction, generateTransactionNonce } from './security';
-import { formatBlockchainError, logErrorDetails } from './errorHandler';
+import { formatBlockchainError, logErrorDetails, handleError } from './errorHandler';
+import MyNFTArtifact from '../artifacts/contracts/MyNFT.sol/MyNFT.json';
+import NFTAuctionArtifact from '../artifacts/contracts/NFTAuction.sol/NFTAuction.json';
 
 // Enhanced ABI including new security features from the updated contract
 const NFT_ABI = [
@@ -330,5 +332,286 @@ export const getNFTOwner = async (tokenId: number): Promise<string> => {
   } catch (error) {
     logErrorDetails(error, 'getNFTOwner');
     throw new Error('Không thể lấy chủ sở hữu NFT');
+  }
+};
+
+// NFT Contract Functions
+export const getNFTContract = async (provider) => {
+  try {
+    if (!provider) return null;
+    
+    const address = process.env.NEXT_PUBLIC_NFT_CONTRACT_ADDRESS;
+    if (!address) throw new Error("NFT contract address not found in environment variables");
+    
+    const signer = await provider.getSigner();
+    return new ethers.Contract(address, MyNFTArtifact.abi, signer);
+  } catch (error) {
+    handleError("Failed to get NFT contract", error);
+    return null;
+  }
+};
+
+export const mintNFTWithProvider = async (
+  provider,
+  recipient,
+  metadataURI
+) => {
+  try {
+    const nftContract = await getNFTContract(provider);
+    if (!nftContract) throw new Error("NFT contract not found");
+    
+    const tx = await nftContract.mintNFT(recipient, metadataURI);
+    const receipt = await tx.wait();
+    
+    // Find the NFTMinted event
+    const event = receipt.logs.find(log => {
+      try {
+        const parsedLog = nftContract.interface.parseLog({
+          topics: log.topics,
+          data: log.data
+        });
+        return parsedLog.name === 'NFTMinted';
+      } catch (e) {
+        return false;
+      }
+    });
+    
+    if (!event) throw new Error("NFTMinted event not found in transaction");
+    const parsedEvent = nftContract.interface.parseLog({
+      topics: event.topics,
+      data: event.data
+    });
+    
+    // Return the token ID
+    return {
+      tokenId: parsedEvent.args.tokenId.toString(),
+      transactionHash: receipt.hash
+    };
+  } catch (error) {
+    handleError("Failed to mint NFT", error);
+    throw error;
+  }
+};
+
+export const batchMintNFTsWithProvider = async (
+  provider,
+  recipient,
+  metadataURIs
+) => {
+  try {
+    const nftContract = await getNFTContract(provider);
+    if (!nftContract) throw new Error("NFT contract not found");
+    
+    const tx = await nftContract.batchMintNFTs(recipient, metadataURIs);
+    const receipt = await tx.wait();
+    
+    return {
+      transactionHash: receipt.hash
+    };
+  } catch (error) {
+    handleError("Failed to batch mint NFTs", error);
+    throw error;
+  }
+};
+
+// Auction Contract Functions
+export const getAuctionContract = async (provider) => {
+  try {
+    if (!provider) return null;
+    
+    const address = process.env.NEXT_PUBLIC_AUCTION_CONTRACT_ADDRESS;
+    if (!address) throw new Error("Auction contract address not found in environment variables");
+    
+    const signer = await provider.getSigner();
+    return new ethers.Contract(address, NFTAuctionArtifact.abi, signer);
+  } catch (error) {
+    handleError("Failed to get auction contract", error);
+    return null;
+  }
+};
+
+export const createAuction = async (
+  provider,
+  nftAddress,
+  tokenId,
+  startingBid,
+  durationInDays
+) => {
+  try {
+    const auctionContract = await getAuctionContract(provider);
+    if (!auctionContract) throw new Error("Auction contract not found");
+    
+    // Convert duration from days to seconds
+    const durationInSeconds = durationInDays * 24 * 60 * 60;
+    
+    // Convert starting bid to wei
+    const startingBidWei = ethers.parseEther(startingBid);
+    
+    const tx = await auctionContract.createAuction(
+      nftAddress,
+      tokenId,
+      startingBidWei,
+      durationInSeconds
+    );
+    
+    const receipt = await tx.wait();
+    
+    // Find the AuctionCreated event
+    const event = receipt.logs.find(log => {
+      try {
+        const parsedLog = auctionContract.interface.parseLog({
+          topics: log.topics,
+          data: log.data
+        });
+        return parsedLog.name === 'AuctionCreated';
+      } catch (e) {
+        return false;
+      }
+    });
+    
+    if (!event) throw new Error("AuctionCreated event not found in transaction");
+    const parsedEvent = auctionContract.interface.parseLog({
+      topics: event.topics,
+      data: event.data
+    });
+    
+    return {
+      auctionId: parsedEvent.args.auctionId.toString(),
+      transactionHash: receipt.hash
+    };
+  } catch (error) {
+    handleError("Failed to create auction", error);
+    throw error;
+  }
+};
+
+export const placeBid = async (
+  provider,
+  auctionId,
+  bidAmount
+) => {
+  try {
+    const auctionContract = await getAuctionContract(provider);
+    if (!auctionContract) throw new Error("Auction contract not found");
+    
+    // Convert bid amount to wei
+    const bidAmountWei = ethers.parseEther(bidAmount);
+    
+    const tx = await auctionContract.bid(auctionId, {
+      value: bidAmountWei
+    });
+    
+    const receipt = await tx.wait();
+    
+    return {
+      transactionHash: receipt.hash
+    };
+  } catch (error) {
+    handleError("Failed to place bid", error);
+    throw error;
+  }
+};
+
+export const endAuction = async (
+  provider,
+  auctionId
+) => {
+  try {
+    const auctionContract = await getAuctionContract(provider);
+    if (!auctionContract) throw new Error("Auction contract not found");
+    
+    const tx = await auctionContract.endAuction(auctionId);
+    const receipt = await tx.wait();
+    
+    return {
+      transactionHash: receipt.hash
+    };
+  } catch (error) {
+    handleError("Failed to end auction", error);
+    throw error;
+  }
+};
+
+export const cancelAuction = async (
+  provider,
+  auctionId
+) => {
+  try {
+    const auctionContract = await getAuctionContract(provider);
+    if (!auctionContract) throw new Error("Auction contract not found");
+    
+    const tx = await auctionContract.cancelAuction(auctionId);
+    const receipt = await tx.wait();
+    
+    return {
+      transactionHash: receipt.hash
+    };
+  } catch (error) {
+    handleError("Failed to cancel auction", error);
+    throw error;
+  }
+};
+
+export const withdrawFunds = async (
+  provider,
+  auctionId
+) => {
+  try {
+    const auctionContract = await getAuctionContract(provider);
+    if (!auctionContract) throw new Error("Auction contract not found");
+    
+    const tx = await auctionContract.withdraw(auctionId);
+    const receipt = await tx.wait();
+    
+    return {
+      transactionHash: receipt.hash
+    };
+  } catch (error) {
+    handleError("Failed to withdraw funds", error);
+    throw error;
+  }
+};
+
+export const getAuctionDetails = async (
+  provider,
+  auctionId
+) => {
+  try {
+    const auctionContract = await getAuctionContract(provider);
+    if (!auctionContract) throw new Error("Auction contract not found");
+    
+    const details = await auctionContract.getAuction(auctionId);
+    
+    return {
+      seller: details[0],
+      nftAddress: details[1],
+      tokenId: details[2].toString(),
+      startingBid: ethers.formatEther(details[3]),
+      highestBid: ethers.formatEther(details[4]),
+      highestBidder: details[5],
+      endTime: new Date(Number(details[6]) * 1000),
+      ended: details[7]
+    };
+  } catch (error) {
+    handleError("Failed to get auction details", error);
+    throw error;
+  }
+};
+
+export const getPendingReturns = async (
+  provider,
+  auctionId,
+  bidder
+) => {
+  try {
+    const auctionContract = await getAuctionContract(provider);
+    if (!auctionContract) throw new Error("Auction contract not found");
+    
+    const pendingAmount = await auctionContract.getPendingReturns(auctionId, bidder);
+    
+    return ethers.formatEther(pendingAmount);
+  } catch (error) {
+    handleError("Failed to get pending returns", error);
+    throw error;
   }
 };
